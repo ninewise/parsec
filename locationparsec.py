@@ -1,5 +1,6 @@
 import re
 import enum
+from functools import wraps
 
 class Compose:
 	__slots__ = ('parts')
@@ -18,38 +19,38 @@ class Compose:
 					yield from bt(l, i + 1, loc, remainder)
 				l.pop()
 
-		def opts(location, string):
-			yield from bt([], 0, location + [func.__name__], string)
+		def compose(location, string):
+			yield from bt([], 0, location, string)
 
-		return opts
+		return compose
 
 def choice(p1, p2):
-	def opts(location, string):
+	def choice(location, string):
 		yield from p1(location, string)
 		yield from p2(location, string)
-	return opts
+	return choice
 
 def string(s):
-	def opts(location, string):
+	def string(location, string):
 		if string.startswith(s):
 			yield (s, location, string[len(s):])
-	return opts
+	return string
 
 def regex(s):
 	s = re.compile(s)
-	def opts(location, string):
+	def regex(location, string):
 		m = re.match(s, string)
 		if m:
 			yield (string[:m.end()], location, string[m.end():])
-	return opts
+	return regex
 
 def empty(location, string):
 	yield (None, location, string)
 
 def unit(value):
-	def opts(location, string):
+	def unit(location, string):
 		yield (value, location, string)
-	return opts
+	return unit
 
 def some(p):
 	def bt(vs, location, string):
@@ -57,31 +58,31 @@ def some(p):
 		for v, l, r in p(location, string):
 			vs[-1] = v
 			yield from bt(vs, l, r)
-			yield (vs[:], l, r)
+			yield (vs[:], l + [p.__name__], r)
 		vs.pop()
 
-	def opts(location, string):
+	def some(location, string):
 		yield from bt([], location, string)
 
-	return opts
+	return some
 
 def many(p):
 	return choice(some(p), unit([]))
 
 def pair(p1, p2):
-	def opts(location, string):
+	def pair(location, string):
 		for v1, l1, r1 in p1(location, string):
 			for v2, l2, r2 in p2(l1, r1):
 				yield ((v1, v2), l2, r2)
-	return opts
+	return pair
 
 def between(pb, p, pa):
-	def opts(location, string):
+	def between(location, string):
 		for vb, lb, rb in pb(location, string):
 			for v, l, r in p(lb, rb):
 				for va, la, ra in pa(l, r):
 					yield (v, l, ra)
-	return opts
+	return between
 
 # Parser :: String -> [(a, String)]
 # bind :: (String -> [(a, String)])
